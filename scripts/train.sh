@@ -1,0 +1,1 @@
+python3 ./src/training/train_mim.py --config ./config/sample.yml --seed 42
