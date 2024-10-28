@@ -103,9 +103,9 @@ class MaskedImageModelingModel(nn.Module):
         Returns:
             {
                 "loss": torch.Tensor,
-                "enc_features": torch.Tensor, shape (B, V, d),
+                "target_features": torch.Tensor, shape (B, c, h, w),
                 "enc_attention_maps": torch.Tensor, shape (B, h, V, V),
-                "pred_features": torch.Tensor, shape (B, L, d),
+                "pred_features": torch.Tensor, shape (B, c, h, w),
                 "pred_attention_maps": torch.Tensor, shape (B, h, L, L),
             }
         """
@@ -126,9 +126,15 @@ class MaskedImageModelingModel(nn.Module):
         # loss calculation
         loss = self.calculate_loss(pred_features, target_features, mask, loss_on_all_patches)
         
+        # reshape the features
+        target_features = rearrange(target_features, "b (h w) (c p1 p2) -> b c (h p1) (w p2)", p1=self.patch_size, p2=self.patch_size, \
+            h=self.feature_res//self.patch_size, w=self.feature_res//self.patch_size)
+        pred_features = rearrange(pred_features, "b (h w) (c p1 p2) -> b c (h p1) (w p2)", p1=self.patch_size, p2=self.patch_size, \
+            h=self.feature_res//self.patch_size, w=self.feature_res//self.patch_size)
+        
         return {
             "loss": loss,
-            "enc_features": enc_features,
+            "target_features": target_features,
             "enc_attention_maps": enc_attention_maps,
             "pred_features": pred_features,
             "pred_attention_maps": pred_attention_maps,
