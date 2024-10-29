@@ -1,21 +1,20 @@
 data:
-  batch_size: 1
+  batch_size: 8
   dataset_root: data/
   dataset_name: mvtec_ad
-  category_name: bottle
+  category_name: screw
   multi_category: false
   transform_type: default
   num_workers: 1
   prefetch_factor: 1
   pin_mem: true
 logging:
-  folder: logs/mim/eval/
-  write_tag: sample
-  save_heatmap: true
+  folder: logs/mim/train/mvtec_ad/screw/
+  write_tag: base_vgg19_ep2000_m75
+  ckpt_interval: 3000
 mask:
   mask_strategy: random
   mask_ratio: 0.75
-  num_masks: 10
   aspect_ratio:  # for block mask
   - 0.75
   - 1.5  
@@ -33,5 +32,15 @@ model:
   feature_res: 64
   in_resolution: 224
   use_bfloat16: false
-  resume_path: /home/haselab/projects/sakai/ICAD/logs/mim/train/base_vgg19_ep2000_m75_p8/base_vgg19_ep2000_m75_p8.pth
-  patch_size: 8
+  resume_path: null
+  patch_size: 2
+optimization:
+  epochs: 2000
+  final_lr: 1.0e-06
+  final_weight_decay: 0.4
+  warmup_lr: 0.001
+  start_lr: 0.0002
+  warmup_epochs: 40
+  start_weight_decay: 0.04
+  grad_clip_norm: 0.0
+

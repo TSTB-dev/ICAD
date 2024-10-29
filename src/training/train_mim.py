@@ -107,6 +107,7 @@ def train(args):
     # logging
     log_folder = config['logging']['folder']
     write_tag = config['logging']['write_tag']
+    ckpt_interval = config['logging']['ckpt_interval']
     
     # mask
     mask_strategy = config['mask']['mask_strategy']
@@ -150,6 +151,7 @@ def train(args):
     logger.info(f"Dataset: {dataset_name}")
     logger.info(f"Number of samples: {len(dataset)}")
     
+    log_folder = os.path.join(log_folder, write_tag)
     tb_logger = tensorboardX.SummaryWriter(log_folder)
     # save config to log
     tb_logger.add_text("config", yaml.dump(config), 0)
@@ -223,6 +225,11 @@ def train(args):
         tb_logger.add_scalar("train/wd", wd_scheduler.get_wd(), i)
         
         logger.info(f"Epoch: {i+1}/{epochs}, Loss: {loss_meter.avg:.4f}")
+        
+        if (i+1) % ckpt_interval == 0:
+            save_path = os.path.join(log_folder, f"{write_tag}_epoch_{i+1}.pth")
+            torch.save(model.state_dict(), save_path)
+            logger.info(f"Model saved to {save_path}")
     
     # save model
     save_path = os.path.join(log_folder, f"{write_tag}.pth")

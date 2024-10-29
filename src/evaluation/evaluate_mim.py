@@ -43,6 +43,8 @@ import yaml
 import random
 import argparse
 
+import matplotlib.pyplot as plt
+from tqdm import tqdm
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -96,8 +98,8 @@ def calculate_mask_coverage(mask_batch, h, w):
     Returns:
         mask_coverage (float): Mask coverage
     """
-    mask = pidx_to_pmask(mask_batch, h, w)  # (B, H, W)
-    mask_or = torch.any(mask, dim=0).float()  # (H, W)
+    mask = pidx_to_pmask(mask_batch, h, w)  # (B, h, w)
+    mask_or = torch.any(mask, dim=0).float()  # (h, w)
     mask_coverage = torch.mean(mask_or)  # scalar
     return mask_coverage  
 
@@ -126,10 +128,10 @@ def evaluate(args):
         config = yaml.safe_load(f)
     
     # Set random seed
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    torch.cuda.manual_seed(args.seed)
+    # random.seed(args.seed)
+    # np.random.seed(args.seed)
+    # torch.manual_seed(args.seed)
+    # torch.cuda.manual_seed(args.seed)
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -147,6 +149,7 @@ def evaluate(args):
     # logging settings
     log_folder = config['logging']['folder']
     write_tag = config['logging']['write_tag']
+    save_heatmap = config['logging']['save_heatmap']
     
     # mask settings
     mask_strategy = config['mask']['mask_strategy']
@@ -215,8 +218,8 @@ def evaluate(args):
         results["filenames"].append(batch["filenames"][0])
         results["cls_names"].append(batch["clsnames"][0])
 
-        mask_coverage = calculate_mask_coverage(mask_indices, feature_res, feature_res)
-        mask_coverage_meter.update(mask_coverage, images.size(0))
+        mask_coverage = calculate_mask_coverage(mask_indices, feature_res//patch_size, feature_res//patch_size)
+        mask_coverage_meter.update(mask_coverage, 1)
         
         mask, _ = indices_to_mask(mask_indices, model.num_patches)
         mask = mask.to(device)
@@ -229,7 +232,9 @@ def evaluate(args):
             err_map = torch.mean((target_features - pred_features)**2, dim=1)  # (B, h, w)
             reshaped_mask = rearrange(mask, 'b (h w) -> b h w', h=feature_res//patch_size, w=feature_res//patch_size)   # (B, h//patch_size, w//patch_size)
             # (B, h//patch_size, w//patch_size) -> (B, h, w)
-            reshaped_mask = F.interpolate(reshaped_mask.unsqueeze(1).float(), size=(feature_res, feature_res), mode='nearest').squeeze(1)
+            reshaped_mask = torch.repeat_interleave(reshaped_mask, patch_size, dim=1)
+            reshaped_mask = torch.repeat_interleave(reshaped_mask, patch_size, dim=2)
+            reshaped_mask = reshaped_mask.float()  
             # Apply mask
             err_map = err_map * reshaped_mask  # (B, h, w)
             
@@ -265,7 +270,25 @@ def evaluate(args):
         labels = [0] * len(normal_scores) + [1] * len(anom_scores)
         auc = roc_auc_score(labels, scores)
         logger.info(f'auROC: {auc:.4f} on {anom_type}')
+    
+    # Save heatmaps
+    if save_heatmap:
+        save_dir = os.path.join(log_folder, write_tag)
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
             
+        global_min = np.min([torch.min(err_map).cpu().item() for err_map in results["err_maps"]])
+        global_max = np.max([torch.max(err_map).cpu().item() for err_map in results["err_maps"]])
+        for i, (err_map, filename) in tqdm(enumerate(zip(results["err_maps"], results["filenames"])), total=len(results["err_maps"])):
+            save_path = os.path.join(save_dir, f"{filename}")
+            err_map = err_map.cpu().numpy()  # (h, w)
+            err_map = (err_map - global_min) / (global_max - global_min + 1e-6) 
+            
+            parent_dir = os.path.dirname(save_path)
+            if not os.path.exists(parent_dir):
+                os.makedirs(parent_dir)
+            plt.imsave(save_path, err_map, cmap='hot')
+    
     logger.info(f"Evaluation completed")
 
 if __name__ == "__main__":            
