@@ -2,15 +2,15 @@ data:
   batch_size: 8
   dataset_root: data/
   dataset_name: mvtec_ad
-  category_name: cable
+  category_name: screw
   multi_category: false
   transform_type: default
   num_workers: 1
   prefetch_factor: 1
   pin_mem: true
 logging:
-  folder: logs/mim/train/mvtec_ad/cable/
-  write_tag: base_vgg19_ep2000_m75
+  folder: logs/mim/train/mvtec_ad/screw/
+  write_tag: screw_base_resnet50_ep2000_m75
   ckpt_interval: 3000
 mask:
   mask_strategy: random
@@ -21,14 +21,16 @@ mask:
   mask_scale:  # for block mask
   - 0.1
   - 0.4
+  divisor:
+  - 1
+  - 2
 model:
   mim_model_type: mim_base
-  backbone_name: vgg19
+  backbone_name: resnet50
   backbone_indices:
+  - 1
+  - 2
   - 3
-  - 8
-  - 17
-  - 26
   feature_res: 64
   in_resolution: 224
   use_bfloat16: false

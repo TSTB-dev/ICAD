@@ -2,7 +2,7 @@ data:
   batch_size: 1
   dataset_root: data/
   dataset_name: mvtec_ad
-  category_name: metal_nut
+  category_name: capsule
   multi_category: false
   transform_type: default
   num_workers: 1
@@ -12,6 +12,7 @@ logging:
   folder: logs/mim/eval/
   write_tag: sample
   save_heatmap: true
+  save_elim_heatmap: true
 mask:
   mask_strategy: random
   mask_seed: null
@@ -28,13 +29,17 @@ mask:
   - 2
 model:
   mim_model_type: mim_base
-  backbone_name: resnet50
+  elim_model_type: predictor_base
+  out_channels: 1
+  backbone_name: vgg19
   backbone_indices:
-  - 1
-  - 2
   - 3
+  - 8
+  - 17
+  - 26
   feature_res: 64
   in_resolution: 224
   use_bfloat16: false
-  resume_path: /home/haselab/projects/sakai/ICAD/logs/mim/train/mvtec_ad/metal_nut/metal_nut_base_resnet50_ep2000_m75/metal_nut_base_resnet50_ep2000_m75.pth
+  resume_path: /home/haselab/projects/sakai/ICAD/logs/mim/train/mvtec_ad/capsule/base_vgg19_ep2000_m75/base_vgg19_ep2000_m75.pth
+  elim_resume_path: /home/haselab/projects/sakai/ICAD/logs/mim/train/mvtec_ad/capsule/elim_capsule_base_vgg19_ep2000_m75_bs8_gc1/elim_capsule_base_vgg19_ep2000_m75_bs8_gc1.pth
   patch_size: 2
