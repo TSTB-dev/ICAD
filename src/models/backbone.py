@@ -1,11 +1,11 @@
 import torch
 from torch import nn, einsum
 from torchvision import models
-from torchvision.models import VGG19_Weights, EfficientNet_V2_S_Weights, EfficientNet_V2_M_Weights, EfficientNet_V2_L_Weights
+from torchvision.models import VGG19_Weights, EfficientNet_V2_S_Weights, EfficientNet_V2_M_Weights, EfficientNet_V2_L_Weights, ResNet50_Weights
 from einops import rearrange
 
 SUPPOTED_BACKBONES = [
-    "vgg19", "efficientnet-s", "efficientnet-m", "efficientnet-l", "pdn_small", "pdn_medium"
+    "vgg19", "efficientnet-s", "efficientnet-m", "efficientnet-l", "resnet50"
 ]
 
 PDN_SMALL_PATH = "./weights/backbone/pdn/teacher_small.pth"
@@ -64,10 +64,8 @@ def get_backbone_model(model_name):
         return models.efficientnet_v2_m(weights=EfficientNet_V2_M_Weights.DEFAULT)
     elif model_name == "efficientnet-l":
         return models.efficientnet_v2_l(weights=EfficientNet_V2_L_Weights.DEFAULT)
-    elif model_name == "pdn_small":
-        return get_pdn_small(ckpt_path=PDN_SMALL_PATH)
-    elif model_name == "pdn_medium":
-        return get_pdn_medium(ckpt_path=PDN_MEDIUM_PATH)
+    elif model_name == "resnet50":
+        return models.resnet50(weights=ResNet50_Weights.DEFAULT)
 
 def get_intermediate_output_hook(layer, input, output):
     BackboneModel.intermediate_cache.append(output)
@@ -80,6 +78,7 @@ class BackboneModel(nn.Module):
         self.model_name = model_name
         self.model = get_backbone_model(model_name)
         self.model.eval()
+        self.model_name = model_name
         self.extract_indices = extract_indices
         self.feature_res = feature_res
         
@@ -91,18 +90,26 @@ class BackboneModel(nn.Module):
     def _register_hook(self):
         self.layer_hooks = []
         feature_dim = 0
-        for i, layer_idx in enumerate(self.extract_indices):
-            module = self.model.features[layer_idx-1]
-            if isinstance(module, nn.Conv2d):
-                feature_dim += module.out_channels
-            elif isinstance(module, nn.Sequential):
-                if isinstance(module[-1], nn.SiLU):
-                    feature_dim += module[-3].out_channels
-                else:
-                    feature_dim += module[-1].out_channels
-            layer_to_hook = self.model.features[layer_idx]
-            hook = layer_to_hook.register_forward_hook(get_intermediate_output_hook)
-            self.layer_hooks.append(hook)
+        if self.model_name == "vgg19":
+            for i, layer_idx in enumerate(self.extract_indices):
+                module = self.model.features[layer_idx-1]
+                if isinstance(module, nn.Conv2d):
+                    feature_dim += module.out_channels
+                elif isinstance(module, nn.Sequential):
+                    if isinstance(module[-1], nn.SiLU):
+                        feature_dim += module[-3].out_channels
+                    else:
+                        feature_dim += module[-1].out_channels
+                layer_to_hook = self.model.features[layer_idx]
+                hook = layer_to_hook.register_forward_hook(get_intermediate_output_hook)
+                self.layer_hooks.append(hook)
+        elif "resnet" in self.model_name:
+            for i, layer_idx in enumerate(self.extract_indices):
+                module = getattr(self.model, f"layer{layer_idx}")
+                feature_dim += module[-1].conv3.out_channels
+                layer_to_hook = getattr(self.model, f"layer{layer_idx}")
+                hook = layer_to_hook.register_forward_hook(get_intermediate_output_hook)
+                self.layer_hooks.append(hook)
         self.feature_dim = feature_dim
     
     def forward(self, x: torch.Tensor):
@@ -138,7 +145,7 @@ class BackboneModel(nn.Module):
         BackboneModel.intermediate_cache = []
 
 if __name__ == "__main__":
-    model = BackboneModel("pdn_small", [], ckpt_path="/home/haselab/projects/ICAD/weights/backbone/pdn/teacher_small.pth")
+    model = BackboneModel("resnet50", [1, 2, 3])
     x = torch.randn(1, 3, 224, 224)
     features = model(x)
     print(features.shape)

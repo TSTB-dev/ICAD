@@ -273,7 +273,7 @@ class VisionTransformerPredictor(nn.Module):
             x = ffn(self.layer_norm(x))
             x = x + residual
         
-        x = self.proj(x)
+        x = self.proj(x)  
         
         if return_all_patches:
             return x, attn_weights_list

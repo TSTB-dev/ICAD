@@ -1,19 +1,19 @@
 data:
-  batch_size: 8
+  batch_size: 64
   dataset_root: data/
   dataset_name: mvtec_ad
-  category_name: bottle
+  category_name: screw
   multi_category: false
   transform_type: default
   num_workers: 1
   prefetch_factor: 1
   pin_mem: true
 logging:
-  folder: logs/mim/train/mvtec_ad/bottle/
-  write_tag: base_vgg19_ep2000_m75
+  folder: logs/mim/train/mvtec_ad/screw/
+  write_tag: base_vgg19_ep2000_mblock75_bs64_p4
   ckpt_interval: 3000
 mask:
-  mask_strategy: random
+  mask_strategy: block
   mask_ratio: 0.75
   aspect_ratio:  # for block mask
   - 0.75
@@ -21,6 +21,9 @@ mask:
   mask_scale:  # for block mask
   - 0.1
   - 0.4
+  divisor:
+  - 2
+  - 8
 model:
   mim_model_type: mim_base
   backbone_name: vgg19
@@ -33,7 +36,7 @@ model:
   in_resolution: 224
   use_bfloat16: false
   resume_path: null
-  patch_size: 2
+  patch_size: 4
 optimization:
   epochs: 2000
   final_lr: 1.0e-06
@@ -43,4 +46,3 @@ optimization:
   warmup_epochs: 40
   start_weight_decay: 0.04
   grad_clip_norm: 0.0
-
