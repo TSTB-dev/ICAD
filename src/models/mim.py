@@ -14,13 +14,21 @@ sys.path.append("src/models")
 from vision_transformer import VisionTransformerEncoder, VisionTransformerPredictor
 from backbone import BackboneModel
 
-SUPPORTEED_MODELS = [
+MIM_SUPPORTEED_MODELS = [
     "mim_tiny",
     "mim_small",
     "mim_base",
     "mim_large",
     "mim_huge",
     "mim_gigant"
+]
+PREDICTOR_SUPPORTEED_MODELS = [
+    "predictor_tiny",
+    "predictor_small",
+    "predictor_base",
+    "predictor_large",
+    "predictor_huge",
+    "predictor_gigant"
 ]
 
 class MaskedImageModelingModel(nn.Module):
@@ -138,6 +146,7 @@ class MaskedImageModelingModel(nn.Module):
             "enc_attention_maps": enc_attention_maps,
             "pred_features": pred_features,
             "pred_attention_maps": pred_attention_maps,
+            "enc_features": enc_features,
         }
 
 def mim_tiny(backbone_name="vgg19", backbone_indices=[3, 8, 17, 26], feature_res=64, patch_size=2, in_resolution=224, **kwargs):
@@ -253,7 +262,25 @@ def mim_gigant(backbone_name="vgg19", backbone_indices=[3, 8, 17, 26], feature_r
         num_pred_mlp_ratio=4,
         layer_norm=nn.LayerNorm,
     )
-        
+    
+def predictor_tiny(num_patches, in_channels, out_channels, emb_size=256, mlp_ratio=4, num_layers=3, num_heads=8) -> VisionTransformerPredictor:
+    return VisionTransformerPredictor(num_patches, in_channels, out_channels, emb_size, num_layers, num_heads, mlp_ratio)
+
+def predictor_small(num_patches, in_channels, out_channels, emb_size=512, mlp_ratio=4, num_layers=4, num_heads=8) -> VisionTransformerPredictor:
+    return VisionTransformerPredictor(num_patches, in_channels, out_channels, emb_size, num_layers, num_heads, mlp_ratio)
+
+def predictor_base(num_patches, in_channels, out_channels, emb_size=768, mlp_ratio=4, num_layers=6, num_heads=8) -> VisionTransformerPredictor:
+    return VisionTransformerPredictor(num_patches, in_channels, out_channels, emb_size, num_layers, num_heads, mlp_ratio)
+
+def predictor_large(num_patches, in_channels, out_channels, emb_size=1024, mlp_ratio=4, num_layers=8, num_heads=8) -> VisionTransformerPredictor:
+    return VisionTransformerPredictor(num_patches, in_channels, out_channels, emb_size, num_layers, num_heads, mlp_ratio)
+
+def predictor_huge(num_patches, in_channels, out_channels, emb_size=2048, mlp_ratio=4, num_layers=12, num_heads=8) -> VisionTransformerPredictor:
+    return VisionTransformerPredictor(num_patches, in_channels, out_channels, emb_size, num_layers, num_heads, mlp_ratio)
+
+def predictor_gigant(num_patches, in_channels, out_channels, emb_size=4096, mlp_ratio=4, num_layers=16, num_heads=8) -> VisionTransformerPredictor:
+    return VisionTransformerPredictor(num_patches, in_channels, out_channels, emb_size, num_layers, num_heads, mlp_ratio)
+    
 if __name__ == "__main__":
     model = MaskedImageModelingModel()
     x = torch.randn(2, 3, 224, 224)

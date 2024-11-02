@@ -12,10 +12,12 @@ logging:
   folder: logs/mim/eval/
   write_tag: sample
   save_heatmap: true
+  save_elim_heatmap: true
 mask:
   mask_strategy: random
-  mask_ratio: 0.75
+  mask_seed: null
   num_masks: 10
+  mask_ratio: 0.75
   aspect_ratio:  # for block mask
   - 0.75
   - 1.5  
@@ -23,10 +25,12 @@ mask:
   - 0.1
   - 0.4
   divisor:
+  - 1
   - 2
-  - 8
 model:
   mim_model_type: mim_base
+  elim_model_type: predictor_base
+  out_channels: 1
   backbone_name: vgg19
   backbone_indices:
   - 3
@@ -37,4 +41,5 @@ model:
   in_resolution: 224
   use_bfloat16: false
   resume_path: /home/haselab/projects/ICAD/logs/mim/train/mvtec_ad/capsule/base_vgg19_ep4000_m75/base_vgg19_ep4000_m75.pth
+  elim_resume_path: /home/haselab/projects/ICAD/logs/mim/train/mvtec_ad/capsule/elim_capsule_base_vgg19_ep4000_m75/elim_capsule_base_vgg19_ep4000_m75.pth
   patch_size: 2

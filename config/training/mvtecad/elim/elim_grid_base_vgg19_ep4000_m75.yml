@@ -1,0 +1,51 @@
+data:
+  batch_size: 8
+  dataset_root: data/
+  dataset_name: mvtec_ad
+  category_name: grid
+  multi_category: false
+  transform_type: default
+  num_workers: 1
+  prefetch_factor: 1
+  pin_mem: true
+logging:
+  folder: logs/mim/train/mvtec_ad/grid/
+  write_tag: elim_grid_base_vgg19_ep4000_m75
+  ckpt_interval: 3000
+mask:
+  mask_strategy: random
+  mask_ratio: 0.75
+  aspect_ratio:  # for block mask
+  - 0.75
+  - 1.5  
+  mask_scale:  # for block mask
+  - 0.1
+  - 0.4
+  divisor:
+  - 1
+  - 2
+model:
+  mim_model_type: mim_base
+  backbone_name: vgg19
+  elim_model_type: predictor_base
+  out_channels: 1
+  backbone_indices:
+  - 3
+  - 8
+  - 17
+  - 26
+  feature_res: 64
+  in_resolution: 224
+  use_bfloat16: false
+  resume_path: /home/haselab/projects/ICAD/logs/mim/train/mvtec_ad/grid/base_vgg19_ep4000_m75/base_vgg19_ep4000_m75.pth
+  patch_size: 2
+optimization:
+  epochs: 200
+  final_lr: 1.0e-05
+  final_weight_decay: 0.4
+  warmup_lr: 0.001
+  start_lr: 0.0002
+  warmup_epochs: 20
+  start_weight_decay: 0.04
+  grad_clip_norm: 1.0
+

@@ -1,1 +1,1 @@
-from .mask_collator import RandomMaskCollator
+from .mask_collator import RandomMaskCollator, BlockRandomMaskCollator, CheckerBoardMaskCollator

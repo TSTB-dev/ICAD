@@ -58,9 +58,11 @@ import numpy as np
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from torchvision import transforms
+from einops import rearrange
+from torch.cuda import amp
 import tensorboardX
 
-from models.build_model import build_mim_model
+from models.build_model import build_mim_model, build_predictor_model
 from datasets import build_dataset, build_transforms
 from util import AverageMeter, CosineAnealingLRSchedulerWithWarmup, CosineAnealingWDScheduler
 from mask import RandomMaskCollator, BlockRandomMaskCollator, CheckerBoardMaskCollator
@@ -118,6 +120,8 @@ def train(args):
     
     # model
     mim_model_type = config['model']['mim_model_type']
+    eliminator_model_type = config['model']['elim_model_type']
+    out_channels = config['model']['out_channels']
     backbone_name = config['model']['backbone_name']
     backbone_indices = config['model']['backbone_indices']
     feature_res = config['model']['feature_res']
@@ -139,9 +143,20 @@ def train(args):
     # build model
     model = build_mim_model(mim_model_type)(**config['model'])
     model.to(device)
+    assert resume_path is not None, "Resume path must be provided for Eliminator training"
     if resume_path is not None:
         model.load_state_dict(torch.load(resume_path, weights_only=True))
         logger.info(f"Loaded model from {resume_path}")
+    model.eval()
+    
+    # Freeze model
+    for param in model.parameters():
+        param.requires_grad = False
+    
+    # build eliminator
+    out_channels = patch_size * patch_size * out_channels
+    eliminator = build_predictor_model(eliminator_model_type)(num_patches=model.num_patches, in_channels=model.enc_emb_size, out_channels=out_channels)
+    eliminator.to(device)
     
     # build dataset
     dataset_path = os.path.join(dataset_root, dataset_name)
@@ -184,10 +199,11 @@ def train(args):
         collate_fn=mask_collator
     )
     total_iter = len(dataloader) * epochs
+    logging.info(f"Total iterations: {total_iter/1000}K steps")
     
     # optimizer
     optimizer = optim.AdamW(
-        model.parameters(), lr=start_lr, weight_decay=start_weight_decay
+        eliminator.parameters(), lr=start_lr, weight_decay=start_weight_decay
     )
     lr_scheduler = CosineAnealingLRSchedulerWithWarmup(
         optimizer, warmup_epochs, epochs, warmup_lr, final_lr, start_lr
@@ -197,36 +213,60 @@ def train(args):
     )
     
     log_interval = 10
-    model.train()
+    eliminator.train()
     logger.info(f"Start training for {epochs} epochs")
     for i in range(epochs):
-        loss_meter = AverageMeter()
+        mim_loss_meter = AverageMeter()
+        elim_loss_meter = AverageMeter()
+        
         for j, (batch, mask_indices) in enumerate(dataloader):
             x = batch["samples"].to(device)
-            mask, _ = indices_to_mask(mask_indices.to(device), model.num_patches)
+            mask, _ = indices_to_mask(mask_indices.to(device), model.num_patches)  
+            # mask: 
             
-            # forward pass
-            if use_bfloat16:
-                with torch.cuda.amp.autocast():
+            # model forward pass 
+            with torch.no_grad():
+                if use_bfloat16:
+                    with torch.amp.autocast("cuda"):
+                        outputs = model(x, mask)
+                else:
                     outputs = model(x, mask)
-                    loss = outputs["loss"]
-            else:
-                outputs = model(x, mask)
                 loss = outputs["loss"]
-            loss_meter.update(loss.item(), x.size(0))
+                target_features = outputs["target_features"]  # (B, c, h, w)
+                pred_features = outputs["pred_features"]  # (B, c, h, w)
+                enc_features = outputs["enc_features"].detach()  # (B, V, d)
+                err_map = torch.mean((target_features - pred_features)**2, dim=1)  # (B, h, w)
+                err_map = err_map.detach()
+            mim_loss_meter.update(loss.item(), x.size(0))
+            
+            # Predict error map using eliminator
+            elim_outputs, _ = eliminator(enc_features, mask, return_all_patches=True)  # (B, V+M, 1*p*p)
+            # Compute prediction loss
+            elim_outputs = rearrange(elim_outputs, 'b (h w) (p1 p2) -> b (h p1) (w p2)', p1=patch_size, p2=patch_size, \
+                h=feature_res//patch_size, w=feature_res//patch_size)  # (B, h, w)
+            elim_loss = nn.functional.mse_loss(elim_outputs, err_map, reduction='none')  # (B, h, w)
+            
+            reshaped_mask = rearrange(mask, 'b (h w) -> b h w', h=feature_res//patch_size, w=feature_res//patch_size)   # (B, h//patch_size, w//patch_size)
+            # (B, h//patch_size, w//patch_size) -> (B, h, w)
+            reshaped_mask = torch.repeat_interleave(reshaped_mask, patch_size, dim=1)
+            reshaped_mask = torch.repeat_interleave(reshaped_mask, patch_size, dim=2)
+            reshaped_mask = reshaped_mask.half() if use_bfloat16 else reshaped_mask.float()
+            
+            elim_loss = torch.sum(elim_loss * reshaped_mask) / torch.sum(reshaped_mask) 
+            elim_loss_meter.update(elim_loss.item(), x.size(0))  
             
             # backward pass
-            optimizer.zero_grad()
-            loss.backward()
+            elim_loss.backward()
             if grad_clip_norm > 0:
-                nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
+                nn.utils.clip_grad_norm_(eliminator.parameters(), grad_clip_norm)
             optimizer.step()
             
-            assert not torch.isnan(loss).any(), "Loss is NaN"
+            assert not torch.isnan(elim_loss).any(), "Loss is NaN"
             
             if j % log_interval == 0:
-                logger.info(f"Epoch: {i+1}/{epochs}, Iter: {j}/{len(dataloader)}, Loss: {loss_meter.avg:.4f}")
-                tb_logger.add_scalar("train/loss", loss_meter.avg, i*len(dataloader)+j)
+                logger.info(f"Epoch: {i+1}/{epochs}, Iter: {j}/{len(dataloader)}, MIM Loss: {mim_loss_meter.avg:.4f}, Elim Loss: {elim_loss_meter.avg:.4f}")
+                tb_logger.add_scalar("train/mim_loss", mim_loss_meter.avg, i*len(dataloader)+j)
+                tb_logger.add_scalar("train/elim_loss", elim_loss_meter.avg, i*len(dataloader)+j)
                 
         # update lr and wd
         lr_scheduler.step()
@@ -234,16 +274,16 @@ def train(args):
         tb_logger.add_scalar("train/lr", lr_scheduler.get_lr(), i)
         tb_logger.add_scalar("train/wd", wd_scheduler.get_wd(), i)
         
-        logger.info(f"Epoch: {i+1}/{epochs}, Loss: {loss_meter.avg:.4f}")
+        logger.info(f"Epoch: {i+1}/{epochs}, MIM Loss: {mim_loss_meter.avg:.4f}, Elim Loss: {elim_loss_meter.avg:.4f}")
         
         if (i+1) % ckpt_interval == 0:
             save_path = os.path.join(log_folder, f"{write_tag}_epoch_{i+1}.pth")
-            torch.save(model.state_dict(), save_path)
+            torch.save(eliminator.state_dict(), save_path)
             logger.info(f"Model saved to {save_path}")
     
     # save model
     save_path = os.path.join(log_folder, f"{write_tag}.pth")
-    torch.save(model.state_dict(), save_path)
+    torch.save(eliminator.state_dict(), save_path)
     logger.info(f"Model saved to {save_path}")
     
     logger.info(f"To visualize training logs, run: tensorboard --logdir {log_folder}")
