@@ -8,5 +8,7 @@ jupyter
 nvitop
 scikit-learn
 einops
-tensorboard
-tensorboardX
+wandb
+
+# for api key
+python-dotenv

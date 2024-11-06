@@ -12,9 +12,18 @@
 # export CUDA_VISIBLE_DEVICES=5
 # python3 src/training/train_mim.py --config config/training/mvtecad/batch/pill_base_vgg19_ep2000_mblk75_bs64_p4.yml --seed 42 & \
 
+# export CUDA_VISIBLE_DEVICES=0
+# python3 src/training/train_mim.py --config config/training/mvtecad/stabilize/capsule_base_vgg19_ep2000_m75.yml --seed 42 & \
+# export CUDA_VISIBLE_DEVICES=1
+# python3 src/training/train_mim.py --config config/training/mvtecad/stabilize/grid_base_vgg19_ep2000_m75.yml --seed 42 & \
+# export CUDA_VISIBLE_DEVICES=2
+# python3 src/training/train_mim.py --config config/training/mvtecad/stabilize/screw_base_vgg19_ep2000_m75.yml --seed 42 & \
+
 export CUDA_VISIBLE_DEVICES=0
-python3 src/training/train_mim.py --config config/training/mvtecad/stabilize/capsule_base_vgg19_ep2000_m75.yml --seed 42 & \
-export CUDA_VISIBLE_DEVICES=1
-python3 src/training/train_mim.py --config config/training/mvtecad/stabilize/grid_base_vgg19_ep2000_m75.yml --seed 42 & \
+python3 src/training/train_mim.py --config config/training/mvtecad/lr/grid_base_vgg19_ep10000_m75.yml --seed 42 & \
+export CUDA_VISIBLE_DEVICES=1 
+python3 src/training/train_mim.py --config config/training/mvtecad/lr/pill_base_vgg19_ep10000_m75.yml --seed 42 & \
 export CUDA_VISIBLE_DEVICES=2
-python3 src/training/train_mim.py --config config/training/mvtecad/stabilize/screw_base_vgg19_ep2000_m75.yml --seed 42 & \
+python3 src/training/train_mim.py --config config/training/mvtecad/lr/screw_base_vgg19_ep10000_m75.yml --seed 42 & \
+export CUDA_VISIBLE_DEVICES=3
+python3 src/training/train_mim.py --config config/training/mvtecad/lr/capsule_base_vgg19_ep10000_m75.yml --seed 42 & \

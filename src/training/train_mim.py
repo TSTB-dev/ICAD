@@ -1,50 +1,3 @@
-"""Example of config mim.yaml
-data:
-  batch_size: 8
-  dataset_root: data/
-  dataset_name: mvtec_ad
-  category_name: bottle
-  multi_category: false
-  num_workers: 1
-  prefetch_factor: 1
-  pin_mem: true
-logging:
-  folder: logs/mim/train/
-  write_tag: debug
-mask:
-  mask_strategy: random
-  mask_ratio: 0.5
-  aspect_ratio:  # for block mask
-  - 0.75
-  - 1.5  
-  mask_scale:  # for block mask
-  - 0.1
-  - 0.4
-  patch_size: 2
-model:
-  mim_model_type: mim_base
-  backbone_name: vgg19
-  backbone_indices:
-  - 3
-  - 8
-  - 17
-  - 26
-  feature_res: 64
-  patch_size: 2
-  in_resolution: 224
-  use_bfloat16: true
-  resume_path: null
-optimization:
-  epochs: 5
-  final_lr: 1.0e-06
-  final_weight_decay: 0.4
-  warmup_lr: 0.001
-  start_lr: 0.0002
-  warmup_epochs: 1
-  start_weight_decay: 0.04
-  grad_clip_norm: 0.0
-"""
-
 import os
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
@@ -60,7 +13,8 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from einops import rearrange
 from sklearn.metrics import roc_auc_score
-import tensorboardX
+import wandb
+from dotenv import load_dotenv
 
 from models.build_model import build_mim_model
 from datasets import build_dataset, build_transforms, EvalDataLoader
@@ -76,6 +30,9 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
+
+# load environment variables
+load_dotenv()
 
 def parse_args():
     parser = argparse.ArgumentParser(description='MIM [Training]')
@@ -160,9 +117,10 @@ def train(args):
     logger.info(f"Number of samples: {len(train_dataset)}")
     
     log_folder = os.path.join(log_folder, write_tag)
-    tb_logger = tensorboardX.SummaryWriter(log_folder)
-    # save config to log
-    tb_logger.add_text("config", yaml.dump(config), 0)
+    # wandb
+    wandb.login()
+    wandb.init(project='mim', name=f"{category_name}_{write_tag}")
+    wandb.config.update(config)
     
     # build data loader
     if mask_strategy == "random":
@@ -204,8 +162,10 @@ def train(args):
     )
     
     log_interval = 10
+    ipe = len(train_dataloader)
     model.train()
     logger.info(f"Start training for {epochs} epochs")
+    logger.info(f"Total iterations: {total_iter/1000:.1f}K")
     for i in range(epochs):
         loss_meter = AverageMeter()
         for j, (batch, mask_indices) in enumerate(train_dataloader):
@@ -233,32 +193,34 @@ def train(args):
             
             if j % log_interval == 0:
                 logger.info(f"Epoch: {i+1}/{epochs}, Iter: {j}/{len(train_dataloader)}, Loss: {loss_meter.avg:.4f}")
-                tb_logger.add_scalar("train/loss", loss_meter.avg, i*len(train_dataloader)+j)
+                wandb.log({"train/loss": loss_meter.avg})
                 
         # update lr and wd
         lr_scheduler.step()
         wd_scheduler.step()
-        tb_logger.add_scalar("train/lr", lr_scheduler.get_lr(), i)
-        tb_logger.add_scalar("train/wd", wd_scheduler.get_wd(), i)
+        wandb.log({"train/lr": lr_scheduler.get_lr()})
+        wandb.log({"train/wd": wd_scheduler.get_wd()})
         
         logger.info(f"Epoch: {i+1}/{epochs}, Loss: {loss_meter.avg:.4f}")
         
         if (i+1) % ckpt_interval == 0:
-            save_path = os.path.join(log_folder, f"{write_tag}_epoch_{i+1}.pth")
+            # save_path = os.path.join(log_folder, f"{write_tag}_epoch_{i+1}.pth")
+            save_path = wandb.run.dir + f"/{write_tag}_epoch_{i+1}.pth"
             torch.save(model.state_dict(), save_path)
             logger.info(f"Model saved to {save_path}")
             
         if (i+1) % eval_interval == 0:
             evaluate(
-                test_dataset, mask_collator, model, device, logger, tb_logger, i+1
+                test_dataset, mask_collator, model, device, logger, (i+1) * ipe
             )
     
     # save model
-    save_path = os.path.join(log_folder, f"{write_tag}.pth")
+    # save_path = os.path.join(log_folder, f"{write_tag}.pth")
+    save_path = wandb.run.dir + f"/{write_tag}.pth"
     torch.save(model.state_dict(), save_path)
     logger.info(f"Model saved to {save_path}")
     
-    logger.info(f"To visualize training logs, run: tensorboard --logdir {log_folder}")
+    logger.info(f"To visualize training logs, run: wandb agent {write_tag}")
     logger.info(f"Training finished")
 
 def evaluate(
@@ -267,8 +229,7 @@ def evaluate(
     model, 
     device, 
     logger, 
-    tb_logger, 
-    epoch, 
+    step, 
     num_masks=10,
     apply_gaussian_filter=True,
 ):
@@ -327,7 +288,7 @@ def evaluate(
             if i % 10 == 0:
                 logger.info(f"Iter: {i}/{len(test_dataloader)}")
     logger.info(f"Loss: {loss_meter.avg:.4f}")
-    tb_logger.add_scalar("eval/loss", loss_meter.avg, epoch)
+    wandb.log({"eval/loss": loss_meter.avg}) 
     logger.info(f"Mask coverage: {mask_coverage_meter.avg:.4f}")
 
     # Calculate AUC score
@@ -335,7 +296,7 @@ def evaluate(
     labels = results["labels"]  # 0: good, 1: anomaly
     auc_score = roc_auc_score(labels, img_level_scores)
     logger.info(f"AUC score: {auc_score:.4f}")
-    tb_logger.add_scalar("eval/auc_all", auc_score, epoch)
+    wandb.log({"eval/auc_all": auc_score})    
 
     # Calculate the auROC score for each class
     unique_anom_types = list(sorted(set(results["anom_types"])))
@@ -350,7 +311,7 @@ def evaluate(
         labels = [0] * len(normal_scores) + [1] * len(anom_scores)
         auc = roc_auc_score(labels, scores)
         logger.info(f'auROC: {auc:.4f} on {anom_type}')
-        tb_logger.add_scalar(f"eval/auroc_{anom_type}", auc, epoch)
+        wandb.log({f"eval/auroc_{anom_type}": auc})
     
     logger.info(f"Eval finished")
 
